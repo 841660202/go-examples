@@ -26,7 +26,21 @@ func omitemptyDemo() {
 	}
 	fmt.Printf("str:%s\n", b)
 }
+func omitemptyDemo2() {
+	u1 := User{
+		Name:  "左右逢源",
+		Email: "",
+	}
+	// struct -> json string
+	b, err := json.Marshal(u1)
+	if err != nil {
+		fmt.Printf("json.Marshal failed, err:%v\n", err)
+		return
+	}
+	fmt.Printf("str:%s\n", b)
+}
 
 func main() {
 	omitemptyDemo()
+	omitemptyDemo2()
 }
