@@ -1,3 +1,5 @@
+<img src="http://t-blog-images.aijs.top/img/202304241057941.webp" style="width:500px;max-width:100%"/>
+
 ## 引用类型和值类型
 
 1. Go 中严格区分引用类型和值类型
@@ -7,6 +9,24 @@
 1.  首字母大写的方法可以被引用
 2.  首字母大写的结构体可以被引用
 3.  首字母大写的键可以被转化
+
+## 打印日志
+
+https://www.liwenzhou.com/posts/Go/fmt/
+
+## 方法 中 值 vs 指针
+
+区别在于：
+
+1. 值方法：可通过指针和值调用，
+2. 指针方法：只能通过指针来调用。
+
+**为什么会有这条规则？**
+
+1. 因为指针方法可以修改接收者；通过值调用它们会导致方法接收到该值的副本， 因此任何修改都将被丢弃，因此该语言不允许这种错误。
+2. 若该值是可寻址的， 那么该语言就会自动插入取址操作符来对付一般的通过值调用的指针方法
+
+如：变量 b 是可寻址的，因此我们只需通过 b.Write 来调用它的 Write 方法，编译器会将它重写为 (&b).Write
 
 ## JSON
 
@@ -28,15 +48,33 @@
    5. 当接收体中存在 json 串中匹配不了的项时，解析会自动忽略该项，该项仍保留原值。如变量 Test，保留空值 nil。
 3. 你一定会发现，变量 Class 貌似没有解析为我们期待样子。因为此时的 Class 是个 interface{}类型的变量，而 json 串中 key 为 CLASS 的 value 是个复合结构，不是可以直接解析的简单类型数据（如“张三”，18，true 等）。所以解析时，由于没有指定变量 Class 的具体类型，json 自动将 value 为复合结构的数据解析为 `map[string]interface{}`类型的项。也就是说，此时的 struct Class 对象与 StuRead 中的 Class 变量没有半毛钱关系，故与这次的 json 解析没有半毛钱关系。
 
+## 内存模型
+
+<a href="./go程/go模型.md" target="_blank" >Go 内存模型</a>
+
 ## 并发
 
 <a href="https://www.modb.pro/db/65265" target="_blank" >见</a>
 
+## Go Select 详解
+
+**GO 为什么引入 select?**
+
+select 是一种 go 可以处理多个通道之间的机制，看起来和 switch 语句很相似，但是 select 其实和 IO 机制中的 select 一样，多路复用通道，随机选取一个进行执行。
+
+如果说通道(channel)实现了多个 goroutine 之前的同步或者通信，那么 select 则实现了多个通道(channel)的同步或者通信
+
+select 具有阻塞的特性。
+
+**有怎样的使用场景？**
+
+<a href="https://www.jianshu.com/p/66edceabd5f6" target="_blank" >Go Select 详解</a>
+
 ## defer
 
-设计动机：
+设计动机：两点好处：
 
-1. 两点好处：第一， 它能确保你不会忘记关闭文件。如果你以后又为该函数添加了新的返回路径时， 这种情况往往就会发生。
+1. 第一，它能确保你不会忘记关闭文件。如果你以后又为该函数添加了新的返回路径时， 这种情况往往就会发生。
 2. 第二，它意味着“关闭”离“打开”很近， 这总比将它放在函数结尾处要清晰明了
 
 使用场景：
@@ -45,7 +83,7 @@
 
 特点：
 
-1. 被推迟的函数按照后进先出（LIFO）的顺序执行
+1. 被推迟的函数按照`后进先出（LIFO）`的顺序执行
 
 ## 追加
 
@@ -70,9 +108,25 @@ fmt.Println(x)
 
 <a href="https://www.cnblogs.com/joyswings/p/9864568.html" target="_blank" >go 语言的 null 值问题</a>
 
-git init
+## 仓库
+
+<!-- git init
 git add .
 git commit -m "first commit"
 git branch -M main
 git remote add origin git@github.com:841660202/go-examples.git
-git push -u origin main
+git push -u origin main -->
+
+## 改变背景色
+
+```js
+var st = document.createElement('style');
+st.innerHTML = `
+   *{
+      color: #a1a1a1!important;
+      background: #000!important;
+      text-shadow: none!important;
+   }
+`;
+document.head.append(st);
+```
