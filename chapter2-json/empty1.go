@@ -22,6 +22,7 @@ func omitemptyDemo() {
 		return
 	}
 	fmt.Printf("str:%s\n", b)
+	// str:{"name":"左右逢源","email":"","hobby":null}
 }
 
 func main() {

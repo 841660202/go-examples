@@ -4,6 +4,13 @@
 
 1. Go 中严格区分引用类型和值类型
 
+## 结构体
+
+1. 嵌套
+2. 继承
+
+<a href="https://juejin.cn/post/6969574358142418975#heading-1" target="_blank" >见</a>
+
 ## 区分大小写
 
 1.  首字母大写的方法可以被引用
@@ -46,13 +53,16 @@ https://www.liwenzhou.com/posts/Go/fmt/
    3. (前提是该变量必需是可导出的，即首字母大写)。
    4. 不可导出的变量无法被解析（如 sex 变量，虽然 json 串中有 key 为 sex 的 k-v，解析后其值仍为 nil,即空值）
    5. 当接收体中存在 json 串中匹配不了的项时，解析会自动忽略该项，该项仍保留原值。如变量 Test，保留空值 nil。
-3. 你一定会发现，变量 Class 貌似没有解析为我们期待样子。因为此时的 Class 是个 interface{}类型的变量，而 json 串中 key 为 CLASS 的 value 是个复合结构，不是可以直接解析的简单类型数据（如“张三”，18，true 等）。所以解析时，由于没有指定变量 Class 的具体类型，json 自动将 value 为复合结构的数据解析为 `map[string]interface{}`类型的项。也就是说，此时的 struct Class 对象与 StuRead 中的 Class 变量没有半毛钱关系，故与这次的 json 解析没有半毛钱关系。
+3. 你一定会发现，变量 Class 貌似没有解析为我们期待样子。
+   1. 因为此时的 Class 是个 interface{}类型的变量，而 json 串中 key 为 CLASS 的 value 是个复合结构，不是可以直接解析的简单类型数据（如“张三”，18，true 等）。
+   2. 所以解析时，由于没有指定变量 Class 的具体类型，json 自动将 value 为复合结构的数据解析为 `map[string]interface{}`类型的项。
+   3. 也就是说，此时的 struct Class 对象与 StuRead 中的 Class 变量没有半毛钱关系，故与这次的 json 解析没有半毛钱关系。
 
 ## 内存模型
 
 <a href="./go程/go模型.md" target="_blank" >Go 内存模型</a>
 
-## 并发
+## 并发与一致
 
 <a href="https://www.modb.pro/db/65265" target="_blank" >见</a>
 
@@ -130,3 +140,111 @@ st.innerHTML = `
 `;
 document.head.append(st);
 ```
+
+## 加密（skip）
+
+## token/cookie
+
+<a href="https://learnku.com/articles/71845" target="_blank" >见</a>
+
+jwt 库很多了 各有各的优势 有些库是不维护了
+
+选择了 `github.com/golang-jwt/jwt` 库
+
+获取命令：`go get -u github.com/golang-jwt/jwt/v4`
+
+### Header
+
+header 典型的由两部分组成：token 的类型（“JWT”）和算法名称（比如：HMAC SHA256 或者 RSA 等等
+
+```go
+{
+  'typ': 'JWT',
+  'alg': 'HS256'
+}
+```
+
+### Payload
+
+载荷就是存放有效信息的地方。这个名字像是特指飞机上承载的货品，这些有效信息包含三个部分
+
+标准中注册的声明
+公共的声明
+私有的声明
+
+jwt.StandardClaims 标准中注册的声明 (建议但不强制使用) ：
+
+1. iss: jwt 签发者
+2. sub: jwt 所面向的用户
+3. aud: 接收 jwt 的一方
+4. exp: jwt 的过期时间，这个过期时间必须要大于签发时间
+5. nbf: 定义在什么时间之前，该 jwt 都是不可用的.
+6. iat: jwt 的签发时间
+7. jti: jwt 的唯一身份标识，主要用来作为一次性 token, 从而回避重放攻击。
+
+私有的声明 ：
+私有声明是提供者和消费者所共同定义的声明，一般不建议存放敏感信息，因为 base64 是对称解密的，意味着该部分信息可以归类为明文信息
+
+私有定义的内容根据自己业务需要来，这里简单加了 UID
+
+```go
+type AuthClaim struct {
+    UID int64 `json:"uid"`
+    jwt.StandardClaims
+}
+```
+
+### Signature 签名
+
+secret 是保存在服务器端的，jwt 的签发生成也是在服务器端的，secret 就是用来进行 jwt 的签发和 jwt 的验证，所以，它就是你服务端的私钥，在任何场景都不应该流露出去。一旦客户端得知这个 secret, 那就意味着客户端是可以自我签发 jwt 了。
+
+```go
+var Secret = "私钥"
+var hmacSampleSecret = []byte(Secret)
+```
+
+### 生成 token
+
+生成了两个小时过期时间的 token
+
+```go
+const TokenExpireDuration = 2 * time.Hour //过期时间
+
+func New(uid int64) (tokenStr string) {
+    var authClaim AuthClaim
+    authClaim.UID = uid
+    authClaim.StandardClaims.ExpiresAt = time.Now().Add(TokenExpireDuration).Unix()
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, authClaim)
+    tokenString, _ := token.SignedString(hmacSampleSecret) //私钥加密
+    return tokenString
+}
+```
+
+### 解析 token
+
+```go
+func Parse(tokenString string) (auth AuthClaim, Valid bool) {
+    token, _ := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+        // Don't forget to validate the alg is what you expect:
+        if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+            return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+        }
+        // hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+        return hmacSampleSecret, nil
+    })
+    Valid = token.Valid//token是否有效 true有效  false无效
+    if claims, ok := token.Claims.(jwt.MapClaims); ok && Valid {
+        auth.UID = int64(claims["uid"].(float64)) //自定义的UID
+        auth.ExpiresAt = int64(claims["exp"].(float64)) //过期时间
+    }
+    return
+}
+```
+
+## 跨域问题
+
+## gorm
+
+## redis
+
+## 如何组织项目

@@ -38,6 +38,13 @@ func omitemptyDemo2() {
 		return
 	}
 	fmt.Printf("str:%s\n", b)
+
+	b2, err := json.MarshalIndent(u1, "", " ")
+	if err != nil {
+		fmt.Printf("json.Marshal failed, err:%v\n", err)
+		return
+	}
+	fmt.Printf("str:%s\n", b2)
 }
 
 func main() {
