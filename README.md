@@ -4,6 +4,178 @@
 
 1. Go 中严格区分引用类型和值类型
 
+## golang append
+
+`append` 是 Go 语言中的内置函数，用于向切片中追加元素。其语法为：
+
+```
+append(slice []Type, elems ...Type) []Type
+```
+
+其中，`slice` 是要追加元素的切片，`elems` 是要追加的元素，可以是单个元素或一个切片。`append` 函数会返回一个新的切片，其中包含了原有的元素以及追加的元素。
+
+如果追加的元素的数量超过了切片的容量，那么 `append` 函数会重新分配内存，并将原有的元素复制到新的内存中。在重新分配内存后，原有的切片仍然指向旧的内存，而新的切片指向新的内存。
+
+`append` 函数的返回值是一个新的切片，因此，你需要使用新的变量来存储它。例如：
+
+```
+// 定义一个切片
+slice := []int{1, 2, 3}
+
+// 追加元素
+slice = append(slice, 4, 5)
+
+// 输出新的切片
+fmt.Println(slice) // [1 2 3 4 5]
+```
+
+在上面的例子中，我们首先定义了一个包含三个元素的切片，然后使用 `append` 函数向其中追加两个元素，并将新的切片赋值给原来的变量。最后，我们输出了新的切片，其中包含了原有的元素以及追加的元素。
+
+### 上述内容中原 slice 会被怎么处理，会不会被垃圾回收
+
+在 Go 中，如果 `append` 函数追加元素后，超出了原有切片的容量，那么 `append` 函数会重新分配内存，并将原有的元素复制到新的内存中。此时，原有的切片仍然指向旧的内存，而新的切片指向新的内存。
+
+如果原有的切片不再被使用，那么它会被垃圾回收。垃圾回收器会自动识别不再使用的对象，并将它们从内存中删除。
+
+需要注意的是，如果原有的切片仍然被其它变量所引用，那么它不会被垃圾回收。只有在所有引用它的变量都被销毁后，垃圾回收器才会将其回收。
+
+因此，在使用 `append` 函数时，我们需要注意内存的使用情况，避免产生不必要的内存分配和泄漏。在需要追加元素时，最好提前分配足够的容量，避免频繁的内存分配。同时，当不再需要使用一个切片时，最好将其置为 `nil`，以便垃圾回收器能够及时回收它所占用的内存。
+
+### 分析下 append 的源码
+
+`append` 是 Go 语言内置函数之一，用于向切片中追加元素。下面是 `append` 函数的源码：
+
+```go
+func append(slice []Type, elems ...Type) []Type {
+    // 获取切片的容量和长度
+    var (
+        s = len(slice)
+        c = cap(slice)
+    )
+    // 如果追加的元素个数超过了剩余的容量，需要重新分配内存
+    if s+len(elems) > c {
+        // 分配新的切片，容量为原切片长度的两倍或者追加元素后的长度，取最大值
+        newCap := max(2*c, s+len(elems))
+        newSlice := makeSlice(len(slice), newCap)
+        // 复制原有的元素到新的切片中
+        copy(newSlice, slice)
+        // 将新的切片赋值给原变量，以实现扩容
+        slice = newSlice
+    }
+    // 将新的元素追加到切片中
+    slice = slice[:s+len(elems)]
+    for i, x := range elems {
+        slice[s+i] = x
+    }
+    return slice
+}
+
+func max(x, y int) int {
+    if x > y {
+        return x
+    }
+    return y
+}
+
+func makeSlice(oldLen, newCap int) []Type {
+    // 分配新的内存
+    newPtr := mallocgc(newCap * sizeof(Type), nil, false)
+    // 将原有的元素复制到新的内存中
+    if raceenabled || msanenabled {
+        // 开启竞态检测和内存检测
+        typ := sliceType(Type{})
+        oldPtr := mallocgc(oldLen*int(typ.size), typ, false)
+        memmove(newPtr, oldPtr, uintptr(oldLen)*typ.size)
+        if raceenabled {
+            racewriterangepc(unsafe.Pointer(newPtr), uintptr(oldLen)*typ.size, getcallerpc(), funcPC(append))
+        }
+        if msanenabled {
+            msanwrite(unsafe.Pointer(newPtr), uintptr(oldLen)*typ.size)
+        }
+        typedmemmove(typ, newPtr, unsafe.Pointer(&oldLen), unsafe.Pointer(&newCap))
+        return *(*[]Type)(unsafe.Pointer(&SliceHeader{
+            Data: newPtr,
+            Len:  oldLen,
+            Cap:  newCap,
+        }))
+    }
+    // 普通情况下，直接复制元素到新的内存中
+    typ := sliceType(Type{})
+    newSlice := *(*[]Type)(unsafe.Pointer(&SliceHeader{
+        Data: newPtr,
+        Len:  oldLen,
+        Cap:  newCap,
+    }))
+    if needmem(typ) {
+        // 需要进行类型转换
+        for i := range newSlice {
+            typedmemmove(typ, unsafe.Pointer(&newSlice[i]), unsafe.Pointer(&slice[i]), nil)
+        }
+    } else {
+        // 直接复制元素
+        memmove(newPtr, data(slice), uintptr(len(slice))*typ.size)
+    }
+    return newSlice
+}
+
+func data(slice []Type) unsafe.Pointer {
+    return unsafe.Pointer(&slice[0])
+}
+
+```
+
+`append` 函数的实现比较复杂，主要分为以下几个步骤：
+
+1. 获取切片的长度和容量。
+
+   在函数一开始，通过 `len` 和 `cap` 内置函数获取原始切片的长度和容量。
+
+2. 判断是否需要扩容。
+
+   如果新的元素个数超过了原切片的剩余容量，则需要扩容。这时会重新分配一个新的切片，容量为原切片长度的两倍或者追加元素后的长度，取两者中的最大值。
+
+   ```go
+   if s+len(elems) > c {
+       // 分配新的切片，容量为原切片长度的两倍或者追加元素后的长度，取最大值
+       newCap := max(2*c, s+len(elems))
+       newSlice := makeSlice(len(slice), newCap)
+       // 复制原有的元素到新的切片中
+       copy(newSlice, slice)
+       // 将新的切片赋值给原变量，以实现扩容
+       slice = newSlice
+   }
+   ```
+
+   这里调用了 `max` 函数，用于计算新的容量。然后调用 `makeSlice` 函数分配新的内存，并将原有元素复制到新的切片中，最后将新的切片赋值给原变量。
+
+3. 追加新的元素。
+
+   在新的容量可以满足追加元素的情况下，就可以将新的元素直接追加到切片的尾部。这里使用了 `slice` 切片的切片操作，将 `slice` 的长度扩展到 `s+len(elems)`，然后使用 `for` 循环将新的元素一个一个追加到切片的尾部。
+
+   ```go
+   // 将新的元素追加到切片中
+   slice = slice[:s+len(elems)]
+   for i, x := range elems {
+       slice[s+i] = x
+   }
+   ```
+
+4. 返回新的切片。
+
+   最后返回的是新的切片，其中包含了追加的新元素。
+
+关于内存分配和释放的问题，Go 语言使用了垃圾回收器来自动管理内存，因此在 `append` 函数中不需要手动释放旧的切片内存空间。当旧的切片被扩容时，Go 语言的垃圾回收器会自动回收旧的内存空间。
+
+### 上述源码中为什么要 开启竞态检测和内存检测
+
+在 `append` 函数中，开启了竞态检测和内存检测，是因为这两种检测可以帮助我们在编写程序时发现一些潜在的错误和问题，从而提高程序的健壮性和可靠性。
+
+竞态检测（Race Detector）是 Go 语言内置的一个工具，它可以用于检测多个 goroutine 之间的竞态条件，比如数据竞态、锁竞争等问题。在 `append` 函数中，可能存在多个 goroutine 对同一个切片进行并发的追加操作，这时如果不进行竞态检测，就有可能出现数据竞态等问题，导致程序出错或者崩溃。
+
+内存检测（Memory Sanitizer）是 GCC、Clang 等编译器中的一个功能，它可以用于检测程序中的内存访问越界、未初始化内存、使用已释放内存等问题。在 `append` 函数中，如果没有开启内存检测，就可能出现一些内存访问越界等问题，导致程序出错或者崩溃。
+
+因此，在开发过程中，开启竞态检测和内存检测可以帮助我们及时发现这些问题，从而及时修复，提高程序的稳定性和可靠性。当然，开启这些检测也会带来一些性能上的损失，因此在生产环境中一般不会开启这些检测。
+
 ## 零值和空值
 
 在 Golang 的 Gin 框架中，可以使用以下方法来处理零值和空值：
@@ -2469,9 +2641,82 @@ db.Table("users").Find(&users)
 2. Attrs 不会被用于生成查询 SQL, 找不到仅用于创建，找到了无效
 3. 不管是否找到记录，Assign 都会将属性赋值给 struct，但这些属性不会被用于生成查询 SQL，也不会被保存到数据库
 
-**区别：**
+**gorm FirstOrCreate 和 FirstOrInit 的区别：**
 
-FirstOrCreate 和 FirstOrInit 的区别： FirstOrCreate 的创建或更新会触发 callback ，而 FirstOrInit 不会
+`FirstOrCreate` 和 `FirstOrInit` 都是 GORM 提供的查询方法，用于在数据库中查找记录。它们的区别在于：
+
+- `FirstOrCreate` 方法会在数据库中查找符合条件的记录，如果找到了则返回该记录，否则会创建一条新记录并返回。如果创建新记录时需要设置一些默认值，可以在调用 `FirstOrCreate` 方法之前为相应字段设置默认值。
+
+- `FirstOrInit` 方法也会在数据库中查找符合条件的记录，如果找到了则返回该记录，否则会返回一个未保存的新记录（即未设置主键的新实例），然后可以对新实例进行修改并保存到数据库中。
+
+举个例子，假设我们有一个 `User` 模型，要根据用户名查找用户记录，如果找到则返回该记录，否则创建一条新记录并返回。可以使用 `FirstOrCreate` 方法来实现：
+
+```go
+var user User
+db.Where("name = ?", "Alice").FirstOrCreate(&user)
+```
+
+如果数据库中已经存在用户名为 "Alice" 的用户记录，则会返回该记录，否则会创建一条新记录并返回。
+
+另一方面，如果我们要返回一个未保存的新用户实例（即未设置主键的新记录），可以使用 `FirstOrInit` 方法：
+
+```go
+var user User
+db.Where("name = ?", "Alice").FirstOrInit(&user)
+```
+
+如果数据库中已经存在用户名为 "Alice" 的用户记录，则会返回该记录，否则会返回一个未保存的新用户实例。我们可以对新实例进行修改并保存到数据库中：
+
+```go
+if user.ID == 0 {
+  user.Name = "Alice"
+  db.Create(&user)
+} else {
+  // ...
+}
+```
+
+`FirstOrCreate` 和 `FirstOrInit` 方法还有一些注意事项：
+
+- `FirstOrCreate` 方法不仅可以根据一个条件查找记录，还可以根据多个条件查找记录，例如：
+
+  ```go
+  db.Where(User{Name: "Alice", Age: 18}).FirstOrCreate(&user)
+  ```
+
+- `FirstOrInit` 方法只能根据一个条件查找记录，如果要根据多个条件查找记录，可以使用 `Where` 方法指定多个条件，例如：
+
+  ```go
+  db.Where("name = ? AND age = ?", "Alice", 18).FirstOrInit(&user)
+  ```
+
+- `FirstOrInit` 方法返回的是一个未保存的新实例，因此如果要在返回结果之后进行更新操作，需要调用 `Save` 方法将新实例保存到数据库中，例如：
+
+  ```go
+  var user User
+  db.Where("name = ?", "Alice").FirstOrInit(&user)
+  user.Age = 18
+  db.Save(&user)
+  ```
+
+  如果只是想修改内存中的实例而不保存到数据库中，可以使用 `Updates` 方法，例如：
+
+  ```go
+  var user User
+  db.Where("name = ?", "Alice").FirstOrInit(&user)
+  db.Model(&user).Updates(User{Age: 18})
+  ```
+
+还有一点需要注意的是，`FirstOrCreate` 和 `FirstOrInit` 方法都是使用 `SELECT ... FROM ... WHERE ... LIMIT 1` 的方式查询数据库的。如果需要查询的条件有索引，这种方式可以有效地利用索引，提高查询性能。但如果需要查询的条件没有索引，这种方式可能会导致全表扫描，查询速度会比较慢。
+
+另外，如果需要查询的条件不唯一，即有多条记录符合条件，那么 `FirstOrCreate` 和 `FirstOrInit` 方法都只会返回其中的一条记录。如果需要返回所有符合条件的记录，可以使用 `Find` 方法进行查询，例如：
+
+```go
+var users []User
+db.Where("age = ?", 18).Find(&users)
+```
+
+这样就可以返回所有年龄为 18 的用户记录了。
 
 ### 零值处理
 
@@ -2965,6 +3210,8 @@ comments 表：
 +----+------------------------+----------------+---------------------+------------------+
 ```
 
+**非 GPT 生成：**怎么看上去，像是一对多了呢
+
 posts 表：
 
 ```
@@ -2986,11 +3233,13 @@ videos 表：
 ```
 
 从上面的数据表结构可以看出，comments 表中的 `CommentableID` 字段表示关联的评论所属的记录的 ID，`CommentableType` 字段表示关联的评论所属的记录类型，即 `Post` 或者 `Video`。这种方式实现了多态关联，允许一个表中的记录关联到多个不同表中的记录。
-### CommentableType是从哪里获取到的
+
+### CommentableType 是从哪里获取到的
 
 在使用 GORM 中的多态关联时，`CommentableType` 字段的值是由 GORM 根据模型关联的结构自动设置的。在示例中，`CommentableType` 是由 `Comment` 模型中定义的多态字段 `PolymorphicType` 决定的，其值是关联到的模型的名称。
 
 在示例中，`Comment` 模型中定义了 `PolymorphicType` 字段，其值为 `gorm:"polymorphic:Commentable;"`。这里的 `Commentable` 是一个字符串，表示多态关联的关联名，即关联到的模型的名称。当创建一个关联到 `Comment` 模型的记录时，GORM 会自动将 `CommentableType` 字段设置为 `Post` 或者 `Video`，具体取决于关联的模型是 `Post` 还是 `Video`。这样在数据库中就可以记录下每条评论关联到的记录类型，从而实现多态关联。
+
 ### gorm has many 自引用
 
 在 GORM 中，可以通过使用 `ForeignKey` 和 `AssociationForeignKey` 标签来实现模型的自引用关系，从而建立一个模型与自身的 "Has Many" 关联。
@@ -3079,6 +3328,339 @@ child := User{
 ```
 
 注意：以上示例中的查询结果仅为示意，并可能因实际数据和数据模型的定义而有所不同。实际的查询结果会根据数据库中的数据以及数据模型的字段定义和标签设置而定。
+
+### gorm .Preload() API 的作用
+
+`Preload()` 是 GORM 中用于预加载关联数据的 API，其作用是在查询某个模型数据时，同时预加载其关联模型的数据，以避免在渲染视图时因为 N+1 问题导致的性能问题。在使用 `Preload()` API 时，GORM 会发出一条 JOIN 查询语句来加载关联数据，而不是使用多条查询语句逐个加载关联数据。
+
+例如，假设我们有以下的模型定义：
+
+```go
+type User struct {
+  gorm.Model
+  Name      string
+  Age       int
+  Addresses []Address
+}
+
+type Address struct {
+  gorm.Model
+  UserID    uint
+  City      string
+  Country   string
+}
+```
+
+其中，`User` 模型拥有多个 `Address` 模型的关联，即一个用户可以有多个地址。如果我们在查询用户数据时需要同时查询用户的地址数据，可以使用 `Preload()` API 来实现：
+
+```go
+var user User
+db.Preload("Addresses").First(&user, 1)
+```
+
+这里的 `Preload("Addresses")` 表示预加载 `User` 模型的 `Addresses` 关联模型数据。在执行查询时，GORM 会发出一条 JOIN 查询语句来同时查询用户和其地址数据，从而避免了 N+1 查询问题。
+
+需要注意的是，使用 `Preload()` API 时应避免过度预加载，以免查询语句过于复杂导致性能下降。可以通过设置参数来控制预加载的深度和范围，以满足具体的查询需求。
+
+### N+1 问题 是什么意思
+
+N+1 问题（N+1 Query Problem）是指在加载关联数据时，使用了 N 条查询语句来查询 N 条主记录以及它们的关联数据，从而导致性能问题的一种情况。通常情况下，N+1 问题是由 ORM 框架的延迟加载机制所导致的。
+
+举个例子，假设我们有一个 `User` 模型和一个 `Post` 模型，它们之间是一对多的关联关系（即一个用户可以有多篇文章）。如果我们要查询所有用户以及他们的所有文章，可能会写出如下的查询代码：
+
+```go
+var users []User
+db.Find(&users)
+
+for _, user := range users {
+  var posts []Post
+  db.Where("user_id = ?", user.ID).Find(&posts)
+  user.Posts = posts
+}
+```
+
+这里的第一条查询语句会加载所有用户的数据，而在第二个循环中，我们对每个用户分别执行一次查询来加载他们的文章数据。这样就会导致 N+1 问题，即执行了 N+1 条查询语句。如果用户数据量很大，那么就会导致性能问题，因为查询语句的执行需要时间和资源。
+
+为了避免 N+1 问题，可以使用 GORM 中的 `Preload()` API 来预加载关联数据，或者手动使用 JOIN 查询语句来同时加载主记录和关联记录。这样可以将多条查询语句合并为一条查询，从而提高查询性能。
+
+### many2many
+
+在 GORM 中，Many-to-Many 关系可以使用 `Many2Many` 方法来定义。它允许您定义两个表之间的多对多关系，并使用中间表进行关联。
+
+以下是一个示例：
+
+```go
+type User struct {
+    ID       uint
+    Name     string
+    Languages []Language `gorm:"many2many:user_languages;"`
+}
+
+type Language struct {
+    ID   uint
+    Name string
+    Users []User `gorm:"many2many:user_languages;"`
+}
+```
+
+在上面的代码中，`User` 和 `Language` 之间的多对多关系使用 `many2many` 方法定义。`user_languages` 是中间表的表名，它将这两个模型关联起来。
+
+在此示例中，每个用户可以拥有多种语言，而每种语言也可以被多个用户使用。中间表 `user_languages` 将两个模型之间的关系保存在一起。
+
+要使用此关系，您可以使用以下代码将语言添加到用户的语言列表中：
+
+```go
+user := User{}
+language := Language{}
+
+// 通过ID获取用户和语言
+db.First(&user, 1)
+db.First(&language, 2)
+
+// 添加语言到用户的语言列表
+db.Model(&user).Association("Languages").Append(&language)
+```
+
+在上面的示例中，我们从数据库中获取了一个用户和一种语言，然后将语言添加到用户的语言列表中。
+
+您还可以从用户的语言列表中获取所有语言：
+
+```go
+db.Model(&user).Association("Languages").Find(&languages)
+```
+
+上面的代码将获取用户的所有语言，并将它们存储在 `languages` 列表中。
+
+### 解释下 如下代码
+
+```go
+type User struct {
+    gorm.Model
+    Profiles []Profile `gorm:"many2many:user_profiles;foreignKey:Refer;joinForeignKey:UserReferID;References:UserRefer;joinReferences:ProfileRefer"`
+    Refer    uint      `gorm:"index:,unique"`
+}
+
+type Profile struct {
+    gorm.Model
+    Name      string
+    UserRefer uint `gorm:"index:,unique"`
+}
+
+```
+
+以上代码定义了两个 GORM 模型 `User` 和 `Profile`。`User` 模型具有多对多关系，并且使用名为 `user_profiles` 的中间表来定义它们之间的关系。中间表具有自定义外键列 `Refer` 和 `UserReferID`，分别用于关联 `User` 和 `Profile` 模型。`Profile` 模型具有 `UserRefer` 字段，用于关联 `User` 模型。
+
+具体来说，以下是关键代码行的解释：
+
+- `gorm.Model` 是 GORM 提供的一个带有 `ID`、`CreatedAt` 和 `UpdatedAt` 字段的基本模型，可以被嵌入到自定义模型中以获得这些通用字段。
+- `Profiles []Profile` 定义了 `User` 模型中的一个 `Profile` 切片，表示每个用户都可以拥有多个个人资料。
+- `gorm:"many2many:user_profiles"` 告诉 GORM 将 `User` 和 `Profile` 模型之间的关系保存在名为 `user_profiles` 的中间表中。
+- `foreignKey:Refer` 和 `joinForeignKey:UserReferID` 分别指定了用于关联 `User` 模型的外键列和用于关联中间表的外键列。
+- `References:UserRefer` 和 `joinReferences:ProfileRefer` 分别指定了用于关联 `User` 模型的外键列和用于关联 `Profile` 模型的外键列。
+- `Refer uint` 声明了一个自定义的外键列 `Refer`，它用于将 `User` 模型与中间表关联起来。
+- `gorm:"index:,unique"` 将 `Refer` 列标记为唯一索引，以确保每个 `User` 对应一个唯一的外键值。
+- `UserRefer uint` 是 `Profile` 模型中的一个字段，表示每个个人资料都与一个用户关联。
+- `gorm:"index:,unique"` 将 `UserRefer` 列标记为唯一索引，以确保每个 `Profile` 对应一个唯一的外键值。
+
+总体来说，以上代码展示了如何在 GORM 中定义多对多关系，并使用自定义中间表和外键列来保存关系。
+
+### 上述代码执行后的建表语句是什么
+
+执行以上代码后，GORM 会自动创建三张数据库表：
+
+1. `users` 表：
+
+```sql
+CREATE TABLE `users` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `deleted_at` datetime(6) DEFAULT NULL,
+  `refer` bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_users_refer` (`refer`),
+  KEY `users_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+```
+
+`users` 表包含一个自增主键 `id`、`created_at` 和 `updated_at` 字段，以及一个名为 `refer` 的自定义外键列。`refer` 列被标记为唯一索引，以确保每个用户对应一个唯一的外键值。
+
+2. `profiles` 表：
+
+```sql
+CREATE TABLE `profiles` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `deleted_at` datetime(6) DEFAULT NULL,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `user_refer` bigint unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_profiles_user_refer` (`user_refer`),
+  KEY `profiles_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+```
+
+`profiles` 表包含一个自增主键 `id`、`created_at` 和 `updated_at` 字段，以及一个名为 `user_refer` 的自定义外键列。`user_refer` 列被标记为唯一索引，以确保每个个人资料对应一个唯一的外键值。
+
+3. `user_profiles` 表：
+
+```sql
+CREATE TABLE `user_profiles` (
+  `user_refer_id` bigint unsigned NOT NULL,
+  `profile_refer_id` bigint unsigned NOT NULL,
+  PRIMARY KEY (`user_refer_id`,`profile_refer_id`),
+  KEY `idx_user_profiles_profile_refer_id` (`profile_refer_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+```
+
+`user_profiles` 表包含两个名为 `user_refer_id` 和 `profile_refer_id` 的外键列，用于关联 `users` 表和 `profiles` 表。这两个外键列被用作联合主键，以确保每个关系都是唯一的。
+
+### 上述代码的增删改查完整代码是什么样
+
+以下是对于上述代码的增删改查的完整 GORM 代码示例：
+
+```go
+package main
+
+import (
+	"fmt"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+type User struct {
+	gorm.Model
+	Profiles []Profile `gorm:"many2many:user_profiles;foreignKey:Refer;joinForeignKey:UserReferID;References:UserRefer;joinReferences:ProfileRefer"`
+	Refer    uint      `gorm:"index:,unique"`
+}
+
+type Profile struct {
+	gorm.Model
+	Name      string
+	UserRefer uint `gorm:"index:,unique"`
+}
+
+func main() {
+	dsn := "user:password@tcp(127.0.0.1:3306)/database?charset=utf8mb4&parseTime=True&loc=Local"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+
+	// 自动迁移表结构
+	err = db.AutoMigrate(&User{}, &Profile{})
+	if err != nil {
+		panic(err)
+	}
+
+	// 创建用户和个人资料
+	user := User{
+		Refer: 1,
+		Profiles: []Profile{
+			{
+				Name: "Alice",
+			},
+			{
+				Name: "Bob",
+			},
+		},
+	}
+	err = db.Create(&user).Error
+	if err != nil {
+		panic(err)
+	}
+
+	// 查询用户和个人资料
+	var result User
+	err = db.Where("refer = ?", 1).Preload("Profiles").First(&result).Error
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("User: %v, Profiles: %v\n", result, result.Profiles)
+
+	// 更新用户和个人资料
+	err = db.Model(&result).Updates(User{
+		Refer: 2,
+		Profiles: []Profile{
+			{
+				Name: "Charlie",
+			},
+			{
+				Name: "Dave",
+			},
+		},
+	}).Error
+	if err != nil {
+		panic(err)
+	}
+
+	// 查询用户和个人资料
+	err = db.Where("refer = ?", 2).Preload("Profiles").First(&result).Error
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("User: %v, Profiles: %v\n", result, result.Profiles)
+
+	// 删除用户和个人资料
+	err = db.Delete(&result).Error
+	if err != nil {
+		panic(err)
+	}
+}
+```
+
+该示例中的 `dsn` 变量包含数据库连接的详细信息，如数据库地址、用户名、密码和数据库名称等。
+
+示例中使用 `db.AutoMigrate(&User{}, &Profile{})` 自动创建表结构。
+
+使用 `db.Create(&user)` 创建用户和个人资料，使用 `db.Where().Preload().First()` 查询用户和个人资料，使用 `db.Model().Updates()` 更新用户和个人资料，使用 `db.Delete()` 删除用户和个人资料。在查询用户时，使用 `Preload()` 函数来关联查询用户的个人资料。
+
+### joinForeignKey 和 joinReferences 各是什么作用
+
+`joinForeignKey` 和 `joinReferences` 是 GORM many-to-many 关系中的两个关键属性，用于指定多对多关联表的外键关联方式。
+
+- `joinForeignKey`: 它指定用于关联多对多关系的关联表中的外键名称。在上述示例中，`joinForeignKey` 的值为 `UserReferID`，这意味着 `user_profiles` 表将包含一个名为 `user_refer_id` 的外键，该外键将引用 `users` 表中的 `id` 列。
+
+- `joinReferences`: 它指定用于关联多对多关系的关联表中引用的外部表和列的名称。在上述示例中，`joinReferences` 的值为 `ProfileRefer`，这意味着 `user_profiles` 表将引用 `profiles` 表中的 `user_refer` 列。
+
+这两个属性一起使用，可以定义多对多关联表的外键关联方式，以及外键关联的表和列。
+
+### foreignKey 和 References 的区别
+
+`foreignKey` 和 `References` 是 GORM 模型中的两个属性，用于指定关联关系中外键和引用的列名。它们的区别如下：
+
+- `foreignKey`: 它用于指定包含外键的模型中的列名。在 many-to-many 关系中，它指定关联模型中的外键列。在 one-to-many 和 many-to-one 关系中，它指定包含外键的模型中的列名。例如，`foreignKey: UserReferID` 指定 User 模型中的 `UserReferID` 列是一个外键。
+
+- `References`: 它用于指定引用的模型中的列名。在 many-to-many 关系中，它指定关联的模型中的列名。在 one-to-many 和 many-to-one 关系中，它指定关联的模型中的主键列名。例如，`References: ProfileRefer` 指定 Profile 模型中的 `ProfileRefer` 列是被引用的列。
+
+因此，`foreignKey` 和 `References` 分别用于指定关联关系中的外键和引用的列名。
+
+**在 many-to-many 关系中，**
+
+- `foreignKey` 用于指定关联模型中的外键列名，
+- `References` 用于指定被关联的模型中的列名。
+
+**在 one-to-many 和 many-to-one 关系中，**
+
+- `foreignKey` 用于指定包含外键的模型中的列名，
+- `References` 用于指定被关联的模型中的主键列名。
+
+**理解**
+
+gorm foreignKey，可以理解成标记，References理解成这个标记从哪来，这么理解没错吧
+
+foreignKey，可以理解成标记，References 理解成这个标记从哪来
+
+可以这么理解，`foreignKey` 和 `References` 分别用于指定关联关系中的外键和引用的列名。
+
+- `foreignKey` 可以理解为一个标记，用于标记包含外键的模型中的列名。
+
+- `References` 可以理解为标记的来源，用于指定被关联的模型中的列名或主键列名，以便 GORM 知道应该关联哪些表和列。
+
+在 many-to-many 关系中，`foreignKey` 用于标记关联模型中的外键列名，`References` 用于指定被关联的模型中的列名。
+
+在 one-to-many 和 many-to-one 关系中，`foreignKey` 用于标记包含外键的模型中的列名，`References` 用于指定被关联的模型中的主键列名。
 
 ## redis
 
