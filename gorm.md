@@ -4255,3 +4255,104 @@ Rows 方法 是执行 SQL 查询，并返回一个指向结果集的行迭代器
 为了确保 `Close()` 方法得到及时调用，GORM 的 `Rows()` 方法在返回结果集对象时会将其包装在一个 `sql.RowsWrapper` 结构体中，并将该结构体返回给调用方。这个结构体实现了 `io.Closer` 接口，并在 `Close()` 方法中调用了原始结果集对象的 `Close()` 方法。
 
 由于 `sql.RowsWrapper` 实现了 `io.Closer` 接口，因此可以通过使用 `defer` 关键字在函数退出时自动调用 `Close()` 方法，从而避免忘记释放资源的问题。
+
+# 2023-05-04
+
+---
+
+### gorm 条件
+
+1. String 条件
+   1. 字符串占位符
+2. Struct & Map 条件
+   1. 纯结构体数据
+   2. 纯 Map 数据
+   3. 主键切片数据
+3. 指定结构体查询字段
+   1. Where 语句中使用结构体
+   2. 注意：添加更多参数的时候，如果是在结构体外面，没有赋值，默认为“零值”
+4. 内联条件
+   1. 在查询方法中，添加更多的参数（字符串占位符、结构体数据、map 数据）
+5. Not 条件
+   1. 字符串
+   2. 结构体
+   3. map
+   4. not in 语意的切片/map 键值数组
+6. Or 条件
+   1. 字符串
+   2. 结构体
+   3. map
+7. 选择特定字段 （选择允许您指定要从数据库中检索的字段。否则，GORM 将默认选择所有字段。）
+   1. 字符串
+   2. 字符串数组
+   3. 默认值
+
+### Where、Or、Not 这个几个 API 是否类似
+
+以下是一个示例代码，使用 GORM 进行 WHERE、OR、NOT 条件查询：
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "gorm.io/driver/sqlite"
+    "gorm.io/gorm"
+)
+
+type User struct {
+    gorm.Model
+    Name     string
+    Age      int
+    IsActive bool
+}
+
+func main() {
+    // 创建 SQLite 数据库连接
+    dsn := "test.db"
+    db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+    if err != nil {
+        panic("failed to connect database")
+    }
+
+    // 自动迁移 User 模型到数据库中
+    db.AutoMigrate(&User{})
+
+    // 插入一些示例数据
+    db.Create(&User{Name: "Alice", Age: 25, IsActive: true})
+    db.Create(&User{Name: "Bob", Age: 30, IsActive: true})
+    db.Create(&User{Name: "Charlie", Age: 35, IsActive: false})
+
+    // 使用 Where 查询 Name 为 Alice 的用户
+    var user User
+    db.Where("name = ?", "Alice").First(&user)
+    fmt.Println("User:", user)
+
+    // 使用 Or 查询 Age 为 25 或 30 的用户
+    var users []User
+    db.Where("age = ?", 25).Or("age = ?", 30).Find(&users)
+    fmt.Println("Users:", users)
+
+    // 使用 Not 查询 IsActive 不为 true 的用户
+    db.Not("is_active = ?", true).Find(&users)
+    fmt.Println("Users:", users)
+}
+```
+
+在上面的示例中，我们使用 `Where` 方法来查询 Name 为 Alice 的用户。使用 `Or` 方法查询 Age 为 25 或 30 的用户。使用 `Not` 方法查询 IsActive 不为 true 的用户。
+
+```go
+// 源码
+func (db *DB) Where(query interface{}, args ...interface{}) (tx *DB) {}
+
+func (db *DB) Not(query interface{}, args ...interface{}) (tx *DB) {}
+
+func (db *DB) Or(query interface{}, args ...interface{}) (tx *DB) {}
+```
+
+从源码可以看出，Where、Or、Not 具有相似的 API,所以这三个函数使用方式相似，只需要会用一个，另外两个类推
+
+### 其他 API 的入参数
+
+<img src="http://t-blog-images.aijs.top/img/202305041005006.webp" />
